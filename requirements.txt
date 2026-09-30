@@ -6,3 +6,4 @@ scikit-learn
 joblib
 flask>=3.0
 flask-cors>=4.0
+gunicorn
