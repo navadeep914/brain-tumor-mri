@@ -1,0 +1,14 @@
+{
+  "name": "mri-brain-tumor-dashboard",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jspdf": "^4.2.1",
+    "mongoose": "^8.9.5"
+  }
+}
