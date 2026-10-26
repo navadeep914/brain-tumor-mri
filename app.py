@@ -2,6 +2,7 @@
 
 Run with:  streamlit run app.py
 """
+from datetime import datetime
 import pandas as pd
 import streamlit as st
 
@@ -13,7 +14,7 @@ from classification import classify
 
 st.set_page_config(page_title="Brain Tumor MRI Dashboard", layout="wide")
 st.title("Brain Tumor Detection & Classification")
-st.caption("ICA feature extraction + Kernel SVM classifier (glioma / meningioma / pituitary / no tumor)")
+st.caption(f"🕒 {datetime.now().strftime('%A, %d %B %Y • %I:%M:%S %p')} | ICA feature extraction + Kernel SVM classifier (glioma / meningioma / pituitary / no tumor)")
 
 with st.sidebar:
     st.header("Settings")

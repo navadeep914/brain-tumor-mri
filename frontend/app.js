@@ -15,6 +15,33 @@ const themeToggle = document.getElementById('themeToggle');
 let selectedFile = null;
 let latestResult = null;
 
+function updateLiveDateTime() {
+	const el = document.getElementById('liveDateTime');
+	if (!el) return;
+	const now = new Date();
+	const dateStr = now.toLocaleDateString(undefined, {
+		weekday: 'long',
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric',
+	}).toUpperCase();
+	const timeStr = now.toLocaleTimeString(undefined, {
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+	});
+	el.innerHTML = `${dateStr} <span class="live-time-sep">•</span> <span class="live-time">${timeStr}</span>`;
+
+	const greetingEl = document.getElementById('greetingHeading');
+	if (greetingEl) {
+		const hour = now.getHours();
+		const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+		greetingEl.textContent = `${greeting}, Dr. Rao`;
+	}
+}
+updateLiveDateTime();
+setInterval(updateLiveDateTime, 1000);
+
 const featureCard = document.createElement('article');
 featureCard.className = 'output-card';
 featureCard.innerHTML = '<div class="output-card-head"><b>4. ICA feature map</b><span>Feature reconstruction</span></div><div class="output-image" id="featureMapOutput"><div class="output-placeholder">Available after analysis</div></div><p>Image reconstructed from the independent components used by the classifier.</p>';
