@@ -1,4 +1,6 @@
-const API_BASE_URL = 'https://brain-tumor-mri-46od.onrender.com';
+const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:')
+	? 'http://localhost:5000'
+	: 'https://brain-tumor-mri-46od.onrender.com';
 
 const fileInput = document.getElementById('fileInput');
 const preview = document.getElementById('scanPreview');
@@ -46,6 +48,15 @@ function setOutput(id, source) {
 	element.appendChild(image);
 }
 
+const modelSelect = document.getElementById('modelSelect');
+if (modelSelect) {
+	modelSelect.addEventListener('change', () => {
+		if (selectedFile && !analyzeBtn.disabled) {
+			analyzeBtn.click();
+		}
+	});
+}
+
 function updateProbabilities(probabilities) {
 	document.querySelectorAll('.prob-row').forEach(row => {
 		const label = row.querySelector('span').textContent;
@@ -56,6 +67,88 @@ function updateProbabilities(probabilities) {
 	});
 }
 
+function updateKsvmDiagnostics(ksvm, predictedLabel) {
+	if (!ksvm) return;
+	const decisionScores = ksvm.decision_scores || {};
+	const activeMargin = decisionScores[predictedLabel] !== undefined ? decisionScores[predictedLabel] : 0;
+	const marginSign = activeMargin >= 0 ? '+' : '';
+
+	// Top badges
+	const chipKernel = document.getElementById('chipKernel');
+	const chipMargin = document.getElementById('chipMargin');
+	const chipVectors = document.getElementById('chipVectors');
+	if (chipKernel) chipKernel.textContent = `${ksvm.kernel || 'RBF'} Kernel`;
+	if (chipMargin) chipMargin.textContent = `Margin: ${marginSign}${activeMargin.toFixed(2)}`;
+	if (chipVectors) chipVectors.textContent = `SV: ${(ksvm.total_support_vectors || 0).toLocaleString()}`;
+
+	// Card summary
+	const activeTag = document.getElementById('ksvmActiveTag');
+	if (activeTag) activeTag.textContent = ksvm.active_model || 'Scaled Pipeline';
+
+	const kernelVal = document.getElementById('ksvmKernelVal');
+	if (kernelVal) kernelVal.textContent = ksvm.kernel || 'RBF';
+
+	const paramsVal = document.getElementById('ksvmParamsVal');
+	if (paramsVal) paramsVal.textContent = `C=${ksvm.c_param || 10} · γ=${ksvm.gamma || 'scale'}`;
+
+	const vectorsVal = document.getElementById('ksvmVectorsVal');
+	if (vectorsVal) vectorsVal.textContent = (ksvm.total_support_vectors || 0).toLocaleString();
+
+	const maxMarginVal = document.getElementById('ksvmMaxMarginVal');
+	if (maxMarginVal) maxMarginVal.textContent = `${marginSign}${activeMargin.toFixed(2)}`;
+
+	// Decision function margin bars
+	const classes = ['glioma', 'meningioma', 'pituitary', 'notumor'];
+	classes.forEach(c => {
+		const score = decisionScores[c];
+		const scoreEl = document.getElementById(`df-${c}`);
+		const barEl = document.getElementById(`dfBar-${c}`);
+		if (scoreEl && score !== undefined) {
+			const s = score >= 0 ? `+${score.toFixed(2)}` : score.toFixed(2);
+			scoreEl.textContent = s;
+			scoreEl.style.color = score >= 0 ? '#10b981' : '#6b7280';
+		}
+		if (barEl && score !== undefined) {
+			// Normalize [-4, +4] to [5%, 95%]
+			const pct = Math.max(5, Math.min(95, ((score + 4) / 8) * 100));
+			barEl.style.width = `${pct}%`;
+			if (score >= 0) {
+				barEl.style.background = 'linear-gradient(90deg, #3568e8, #10b981)';
+			} else {
+				barEl.style.background = 'linear-gradient(90deg, #9ca3af, #6b7280)';
+			}
+		}
+	});
+
+	// Support vectors breakdown
+	const svByClass = ksvm.support_vectors_by_class || {};
+	classes.forEach(c => {
+		const svEl = document.getElementById(`sv-${c}`);
+		if (svEl && svByClass[c] !== undefined) {
+			svEl.textContent = svByClass[c].toLocaleString();
+		}
+	});
+
+	// 32 Selected FastICA Features
+	const sparkContainer = document.getElementById('featureSparkBar');
+	if (sparkContainer && Array.isArray(ksvm.selected_features)) {
+		sparkContainer.innerHTML = '';
+		const features = ksvm.selected_features;
+		const maxAbs = Math.max(...features.map(f => Math.abs(f)), 0.001);
+		features.forEach((val, idx) => {
+			const bar = document.createElement('div');
+			bar.className = 'spark-bar';
+			const heightPercent = Math.max(12, Math.round((Math.abs(val) / maxAbs) * 100));
+			bar.style.height = `${heightPercent}%`;
+			if (val < 0) {
+				bar.style.background = '#8668df';
+			}
+			bar.title = `ICA Component #${idx + 1}: ${val}`;
+			sparkContainer.appendChild(bar);
+		});
+	}
+}
+
 analyzeBtn.addEventListener('click', async () => {
 	if (!selectedFile) return;
 	analyzeBtn.disabled = true;
@@ -64,6 +157,8 @@ analyzeBtn.addEventListener('click', async () => {
 	try {
 		const form = new FormData();
 		form.append('file', selectedFile);
+		const chosenEngine = modelSelect ? modelSelect.value : 'ksvm';
+		form.append('model', chosenEngine);
 		const response = await fetch(`${API_BASE_URL}/analyze`, {
 			method: 'POST',
 			body: form,
@@ -89,6 +184,7 @@ analyzeBtn.addEventListener('click', async () => {
 		document.getElementById('confidenceValue').textContent = `${(result.confidence * 100).toFixed(1)}%`;
 		document.getElementById('confidenceBar').style.width = `${result.confidence * 100}%`;
 		updateProbabilities(result.probabilities);
+		updateKsvmDiagnostics(result.ksvm, result.label);
 		if (result.images) {
 			setOutput('originalOutput', result.images.original);
 			setOutput('highlightOutput', result.images.highlight);
@@ -123,17 +219,9 @@ function loadPdfLibrary() {
 
 	return new Promise((resolve, reject) => {
 		const script = document.createElement('script');
-
-		script.src =
-			'https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js';
-
+		script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js';
 		script.onload = resolve;
-
-		script.onerror = () =>
-			reject(
-				new Error('Could not load the PDF generator.')
-			);
-
+		script.onerror = () => reject(new Error('Could not load the PDF generator.'));
 		document.head.appendChild(script);
 	});
 }
@@ -150,6 +238,7 @@ document.getElementById('downloadBtn').addEventListener('click', async event => 
 		const result = latestResult;
 		const label = result.label === 'notumor' ? 'No tumor' : result.label;
 		const status = result.tumor_detected ? 'Tumor status: POSITIVE' : 'Tumor status: NEGATIVE';
+		const ksvm = result.ksvm || {};
 
 		report.setFontSize(20);
 		report.text('NeuroLens MRI Analysis Report', 14, 20);
@@ -158,19 +247,27 @@ document.getElementById('downloadBtn').addEventListener('click', async event => 
 		report.text(`Predicted class: ${label}`, 14, 43);
 		report.text(`Confidence: ${(result.confidence * 100).toFixed(1)}%`, 14, 52);
 		report.text(`Status: ${status}`, 14, 61);
-		report.text('Method: ICA feature extraction + Kernel SVM', 14, 70);
+		report.text(`Classifier: ${ksvm.active_model || 'Kernel SVM (RBF)'}`, 14, 70);
+		report.text(`Kernel function: ${ksvm.kernel || 'RBF'} (C=${ksvm.c_param || 10}, γ=${ksvm.gamma || 'scale'})`, 14, 78);
+		if (ksvm.total_support_vectors) {
+			report.text(`Active Support Vectors: ${ksvm.total_support_vectors.toLocaleString()}`, 14, 86);
+		}
+
 		report.setFontSize(13);
-		report.text('Class probabilities', 14, 84);
+		report.text('Class Probabilities & Decision Margins', 14, 100);
 		report.setFontSize(10);
 		const classNames = { glioma: 'Glioma', meningioma: 'Meningioma', notumor: 'No tumor', pituitary: 'Pituitary' };
+		const dfScores = ksvm.decision_scores || {};
 		Object.entries(result.probabilities || {}).forEach(([key, value], index) => {
-			report.text(`${classNames[key] || key}: ${(value * 100).toFixed(1)}%`, 14, 94 + index * 7);
+			const df = dfScores[key] !== undefined ? ` (Margin: ${dfScores[key] >= 0 ? '+' : ''}${dfScores[key].toFixed(2)})` : '';
+			report.text(`${classNames[key] || key}: ${(value * 100).toFixed(1)}%${df}`, 14, 110 + index * 7);
 		});
+
 		report.setFontSize(9);
 		report.text(
 			'Visual outputs are review aids, not a substitute for clinical interpretation. The highlight and segmentation are heuristic; the feature map shows the ICA reconstruction.',
 			14,
-			132,
+			148,
 			{ maxWidth: 182 },
 		);
 
@@ -190,7 +287,7 @@ document.getElementById('downloadBtn').addEventListener('click', async event => 
 			report.text(title, x, y);
 			if (image) report.addImage(image, 'PNG', x, y + 4, 82, 82, undefined, 'FAST');
 		});
-		report.save('neurolens-mri-report.pdf');
+		report.save('neurolens-ksvm-mri-report.pdf');
 	} catch (error) {
 		alert(error.message || 'Could not create the PDF report.');
 	} finally {

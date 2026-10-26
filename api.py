@@ -34,13 +34,25 @@ def analyze():
     if gray is None:
         return jsonify({'error': 'The uploaded file could not be read as an image.'}), 400
     norm = preprocess_small(gray)
-    result = classify(norm)
+    model_choice = request.form.get('model', 'ksvm')
+    result = classify(norm, model_name=model_choice)
     original = get_original(gray)
     feature_map = make_feature_map(norm)
     is_tumor = result['label'] != 'notumor'
     highlighted, highlight_found = make_highlight(original) if is_tumor else (original, False)
     segmentation, segmentation_found = make_segmentation(original) if is_tumor else (original * 0, False)
-    return jsonify({**result, 'tumor_detected': is_tumor, 'highlight_found': highlight_found, 'segmentation_found': segmentation_found, 'images': {'original': image_data_uri(original), 'highlight': image_data_uri(highlighted), 'segmentation': image_data_uri(segmentation), 'feature_map': image_data_uri(feature_map)}})
+    return jsonify({
+        **result,
+        'tumor_detected': is_tumor,
+        'highlight_found': highlight_found,
+        'segmentation_found': segmentation_found,
+        'images': {
+            'original': image_data_uri(original),
+            'highlight': image_data_uri(highlighted),
+            'segmentation': image_data_uri(segmentation),
+            'feature_map': image_data_uri(feature_map),
+        }
+    })
 
 if __name__ == '__main__':
     load_models()

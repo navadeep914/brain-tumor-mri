@@ -53,7 +53,7 @@ def preprocess_small(gray):
 
 @lru_cache(maxsize=1)
 def load_models():
-    """Load the four trained pipeline pieces saved by the notebook."""
+    """Load the trained pipeline pieces (including K-SVM if available)."""
     names = ["pca", "ica", "selector", "svm"]
     missing = [n for n in names if not os.path.exists(os.path.join(MODEL_DIR, f"{n}.joblib"))]
     if missing:
@@ -61,4 +61,11 @@ def load_models():
             f"Missing {missing} in '{MODEL_DIR}'. Copy the 'models' folder your notebook "
             "created (pca/ica/selector/svm .joblib) next to app.py."
         )
-    return {n: joblib.load(os.path.join(MODEL_DIR, f"{n}.joblib")) for n in names}
+    models = {n: joblib.load(os.path.join(MODEL_DIR, f"{n}.joblib")) for n in names}
+    ksvm_path = os.path.join(MODEL_DIR, "ksvm.joblib")
+    if os.path.exists(ksvm_path):
+        try:
+            models["ksvm"] = joblib.load(ksvm_path)
+        except Exception as e:
+            print(f"Warning: could not load ksvm.joblib: {e}")
+    return models
